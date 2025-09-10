@@ -9,6 +9,7 @@ const io = new Server(server, { cors: { origin: "*" } });
 const ROOM = "global";
 let connectedUsers = 0;
 const MAX_USERS = 5;
+let participants = [];
 
 io.on("connection", (socket) => {
   if (connectedUsers >= MAX_USERS) {
@@ -18,17 +19,41 @@ io.on("connection", (socket) => {
   }
 
   connectedUsers++;
-  socket.join(ROOM);
 
-  io.to(ROOM).emit("message", `✅ A user joined. Total: ${connectedUsers}/5`);
+  socket.on("setName", (name) => {
+    socket.nickname = name || "Anonymous";
+    participants.push(socket.nickname);
+
+    socket.join(ROOM);
+    io.to(ROOM).emit("message", `✅ ${socket.nickname} joined.`);
+    io.to(ROOM).emit("participants", participants);
+  });
 
   socket.on("sendMessage", (msg) => {
-    io.to(ROOM).emit("message", msg);
+    if (socket.nickname) {
+      io.to(ROOM).emit("message", `${socket.nickname}: ${msg}`);
+      io.to(ROOM).emit("typing", { user: socket.nickname, typing: false });
+    }
+  });
+
+  socket.on("typing", (isTyping) => {
+    if (socket.nickname) {
+      socket.to(ROOM).emit("typing", { user: socket.nickname, typing: isTyping });
+    }
+  });
+
+  socket.on("voice", (data) => {
+    io.to(ROOM).emit("voice", data);
   });
 
   socket.on("disconnect", () => {
-    connectedUsers--;
-    io.to(ROOM).emit("message", `⚠️ A user left. Total: ${connectedUsers}/5`);
+    if (socket.nickname) {
+      connectedUsers--;
+      participants = participants.filter((u) => u !== socket.nickname);
+
+      io.to(ROOM).emit("message", `⚠️ ${socket.nickname} left.`);
+      io.to(ROOM).emit("participants", participants);
+    }
   });
 });
 
